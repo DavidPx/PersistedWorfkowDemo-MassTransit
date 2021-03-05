@@ -2,15 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MassTransit;
+using MassTransit.Definition;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
+using persistedworkflowdemo_masstransit.Consumers;
+using persistedworkflowdemo_masstransit.StateMachine;
+using persistedworkflowdemo_masstransit.StateMachine.Activities;
+using persistedworkflowdemo_masstransit.StateMachine.Events;
 
 namespace persistedworkflowdemo_masstransit
 {
@@ -32,6 +39,40 @@ namespace persistedworkflowdemo_masstransit
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "persistedworkflowdemo_masstransit", Version = "v1" });
             });
+
+            services
+                .AddTransient<ApprovalActivity>()
+                .AddTransient<DenialActivity>();
+
+            services.TryAddSingleton(KebabCaseEndpointNameFormatter.Instance);
+            services
+                .AddMassTransit(cfg =>
+                {
+                    cfg.AddConsumer<CreateWorkItemConsumer>();
+                    cfg.AddConsumer<ApproveWorkItemConsumer>();
+                    cfg
+                        .AddSagaStateMachine<WorkItemStateMachine, WorkItemState>()
+                        .InMemoryRepository()
+                        
+                        .Endpoint(e =>
+                        {
+                            e.Name = $"queue:{KebabCaseEndpointNameFormatter.Instance.Consumer<CreateWorkItemConsumer>()}";
+                        })
+                        .Endpoint(e =>
+                        {
+                            e.Name = $"queue:{KebabCaseEndpointNameFormatter.Instance.Consumer<ApproveWorkItemConsumer>()}";
+                        });
+                    
+                    cfg.UsingInMemory((context, cfg) =>
+                    {
+                        cfg.UseInMemoryScheduler();
+                        cfg.ConfigureEndpoints(context);
+                        cfg.UseInMemoryOutbox();
+                    });
+
+                });
+
+            services.AddMassTransitHostedService();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
