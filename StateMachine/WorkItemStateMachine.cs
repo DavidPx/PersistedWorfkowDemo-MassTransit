@@ -25,8 +25,8 @@ namespace persistedworkflowdemo_masstransit.StateMachine
         public WorkItemStateMachine()
         {
             InstanceState(x => x.CurrentState, WaitingForApproval, ApprovedWaitingForExecution, Executed);
-            Event(() => CreateWorkItem);
-            Event(() => ApproveWorkItem);
+            Event(() => CreateWorkItem, x => x.CorrelateById(context => context.Message.CorrelationId));
+            Event(() => ApproveWorkItem, x => x.CorrelateById(context => context.Message.CorrelationId));
             Schedule(() => FutureExecutionSchedule, instance => instance.FutureExecutionScheduleTimeoutTokenId, s =>
             {
                 s.Received = r => r.CorrelateById(context => context.Message.CorrelationId);
@@ -88,7 +88,7 @@ namespace persistedworkflowdemo_masstransit.StateMachine
                 );
             
             // Without this line I get the same "infinite loop" pair of exceptions as above
-            //During(Final, Ignore(ApproveWorkItem), Ignore(CreateWorkItem));
+            During(Final, Ignore(ApproveWorkItem), Ignore(CreateWorkItem));
             
         }
     }
