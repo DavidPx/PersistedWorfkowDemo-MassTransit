@@ -1,10 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
 using Automatonymous;
-using GreenPipes;
 using MassTransit;
 using persistedworkflowdemo_masstransit.StateMachine.Activities;
 using persistedworkflowdemo_masstransit.StateMachine.Events;
@@ -48,6 +44,11 @@ namespace persistedworkflowdemo_masstransit.StateMachine
                 );
 
             During(WaitingForApproval,
+                /*
+                 * If I skip this Ignore I get an "infinite loop" of this exception
+                 *
+                 *  The CreateWorkItem event is not handled during the WaitingForApproval state for the WorkItemStateMachine state machine
+                 */
                 Ignore(CreateWorkItem),
                 When(ApproveWorkItem, filter => filter.Data.WasApproved == false)
                     .Then(x =>
@@ -58,7 +59,7 @@ namespace persistedworkflowdemo_masstransit.StateMachine
                     })
                     .Activity(x => x.OfInstanceType<DenialActivity>())
                     .Finalize(),
-                When(ApproveWorkItem, filter => filter.Data.WasApproved)
+                When(ApproveWorkItem, filter => filter.Data.WasApproved == true)
                     .Then(x =>
                     {
                         Trace.WriteLine($"Got approval!  Scheduling execution for {x.Instance.ScheduledDate:g}");
@@ -74,12 +75,20 @@ namespace persistedworkflowdemo_masstransit.StateMachine
             );
             During(ApprovedWaitingForExecution, 
                 When(FutureExecutionSchedule.Received)
-                    .Activity(x => x.OfInstanceType<ApprovalActivity>()),
+                    .Activity(x => x.OfInstanceType<ApprovalActivity>())
+                    .Finalize(),
+                /*
+                 * If these are skipped I get an "infinite loop" of these two exceptions:
+                 *  The ApproveWorkItem event is not handled during the ApprovedWaitingForExecution state for the WorkItemStateMachine state machine
+                 *  The CreateWorkItem event is not handled during the ApprovedWaitingForExecution state for the WorkItemStateMachine state machine
+                 */
+
                 Ignore(ApproveWorkItem),
                 Ignore(CreateWorkItem)
                 );
             
-            During(Final, Ignore(ApproveWorkItem), Ignore(CreateWorkItem));
+            // Without this line I get the same "infinite loop" pair of exceptions as above
+            //During(Final, Ignore(ApproveWorkItem), Ignore(CreateWorkItem));
             
         }
     }
